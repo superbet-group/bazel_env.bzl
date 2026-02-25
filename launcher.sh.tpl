@@ -180,6 +180,10 @@ fi
 # Since tools may cd into BUILD_WORKSPACE_DIRECTORY, ensure that RUNFILES_DIR
 # is absolute.
 export RUNFILES_DIR="${own_path}.runfiles"
+# Reset the manifest file to match the new RUNFILES_DIR. Without this, a stale
+# RUNFILES_MANIFEST_FILE from a parent bazel_env tool (e.g. one tool invoking
+# another) causes compiled binaries to look up runfiles in the wrong manifest.
+export RUNFILES_MANIFEST_FILE="${RUNFILES_DIR}/MANIFEST"
 # Also set legacy RUNFILES variables for compatibility with runfiles logic that
 # predates the runfiles library (e.g. in rules_js).
 export RUNFILES="${RUNFILES_DIR}"
