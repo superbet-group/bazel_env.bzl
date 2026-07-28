@@ -290,6 +290,7 @@ def _tool_impl(ctx):
     sha256sum = ctx.attr._sha256sum[0][_Sha256sumInfo]
 
     runfiles = runfiles.merge(sha256sum.default_runfiles)
+    runfiles = runfiles.merge(ctx.runfiles([ctx.file._lock_lib]))
 
     # Path of the helper action output of the bazel_env target (see
     # _bazel_env_rule_impl) relative to the directory containing the launcher.
@@ -310,6 +311,7 @@ def _tool_impl(ctx):
             "{{bazel_env_label}}": str(ctx.label).removeprefix("@@").removesuffix("/tools/" + name),
             "{{rlocation_path}}": rlocation_path,
             "{{sha256sum_rlocation_path}}": _rlocation_path(ctx, sha256sum.executable),
+            "{{lock_lib_rlocation_path}}": _rlocation_path(ctx, ctx.file._lock_lib),
             "{{extra_env}}": "\n".join([
                 "export {}={}".format(k, repr(v))
                 for k, v in extra_env.items()
@@ -358,6 +360,11 @@ _tool = rule(
         "_sha256sum": attr.label(
             cfg = _flip_output_dir,
             default = ":sha256sum_tool",
+        ),
+        "_lock_lib": attr.label(
+            allow_single_file = True,
+            cfg = _flip_output_dir,
+            default = ":lock_lib.sh",
         ),
     },
     executable = True,
@@ -508,6 +515,8 @@ def _bazel_env_rule_impl(ctx):
     ) for toolchain in ctx.attr.toolchain_targets]
     toolchain_name_pad = max([len(toolchain_info.name) for toolchain_info in toolchain_infos] + [0])
 
+    sha256sum = ctx.attr._sha256sum[0][_Sha256sumInfo]
+
     status_script = ctx.actions.declare_file(ctx.label.name + ".sh")
     ctx.actions.expand_template(
         template = ctx.file._status,
@@ -519,6 +528,9 @@ def _bazel_env_rule_impl(ctx):
             # //:bazel_env
             "{{label}}": str(ctx.label).removeprefix("@@"),
             "{{bin_dir}}": bin_dir.path,
+            "{{tools_dir}}": bin_dir.path.removesuffix("/bin") + "/tools",
+            "{{sha256sum_rlocation_path}}": _rlocation_path(ctx, sha256sum.executable),
+            "{{lock_lib_rlocation_path}}": _rlocation_path(ctx, ctx.file._lock_lib),
             "{{unique_name_tool}}": ctx.attr.unique_marker_name,
             "{{has_tools}}": str(bool(tool_infos)),
             "{{tools}}": "\n".join(
@@ -541,6 +553,7 @@ def _bazel_env_rule_impl(ctx):
         DefaultInfo(
             executable = status_script,
             files = depset([implicit_out, bin_dir]),
+            runfiles = ctx.runfiles([ctx.file._lock_lib]).merge(sha256sum.default_runfiles),
         ),
     ]
 
@@ -562,6 +575,15 @@ _bazel_env_rule = rule(
             cfg = "target",
             default = ":status.sh.tpl",
             executable = True,
+        ),
+        "_sha256sum": attr.label(
+            cfg = _flip_output_dir,
+            default = ":sha256sum_tool",
+        ),
+        "_lock_lib": attr.label(
+            allow_single_file = True,
+            cfg = "target",
+            default = ":lock_lib.sh",
         ),
     },
     executable = True,

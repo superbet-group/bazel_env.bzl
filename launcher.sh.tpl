@@ -58,41 +58,17 @@ files_to_watch=()
 # Fall back to workspace_path if source_workspace_path is empty.
 watch_base="${source_workspace_path:-$workspace_path}"
 
-if [[ -f "${own_dir}/__common_watch_dirs.txt" ]]; then
-  for dir in $(cat "${own_dir}/__common_watch_dirs.txt"); do
-    if [[ -d "$watch_base/$dir" ]]; then
-      for file in $(find "$watch_base/$dir" -type f); do
-        files_to_watch+=("$file")
-      done
-    fi
-  done
-fi
+# Enumerate this tool's watched files via the shared helper so the launcher and
+# the status script (bazel run) agree on the exact contents of bazel_env.lock.
+source "${own_path}.runfiles/{{lock_lib_rlocation_path}}"
 
-if [[ -f "${own_dir}/__common_watch_files.txt" ]]; then
-  for file in $(cat "${own_dir}/__common_watch_files.txt"); do
-    if [[ -f "$watch_base/$file" ]]; then
-      files_to_watch+=("$watch_base/$file")
-    fi
-  done
-fi
-
-if [[ -f "${own_dir}/_${own_name}_watch_dirs.txt" ]]; then
-  for dir in $(cat "${own_dir}/_${own_name}_watch_dirs.txt"); do
-    if [[ -d "$watch_base/$dir" ]]; then
-      for file in $(find "$watch_base/$dir" -type f); do
-        files_to_watch+=("$file")
-      done
-    fi
-  done
-fi
-
-if [[ -f "${own_dir}/_${own_name}_watch_files.txt" ]]; then
-  for file in $(cat "${own_dir}/_${own_name}_watch_files.txt"); do
-    if [[ -f "$watch_base/$file" ]]; then
-      files_to_watch+=("$watch_base/$file")
-    fi
-  done
-fi
+while IFS= read -r _watch_file; do
+  files_to_watch+=("$_watch_file")
+done < <(bazel_env_collect_watch_files "$watch_base" \
+  "${own_dir}/__common_watch_dirs.txt" \
+  "${own_dir}/__common_watch_files.txt" \
+  "${own_dir}/_${own_name}_watch_dirs.txt" \
+  "${own_dir}/_${own_name}_watch_files.txt")
 
 rebuild_env=False
 sha256_cmd="${own_path}.runfiles/{{sha256sum_rlocation_path}}"

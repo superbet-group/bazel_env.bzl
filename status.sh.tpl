@@ -77,6 +77,39 @@ EOF
     exit 1
 fi
 
+# regenerate bazel_env.lock
+sha256_cmd="${RUNFILES_DIR:-$0.runfiles}/{{sha256sum_rlocation_path}}"
+if [[ -x "$sha256_cmd" ]]; then
+  source "${RUNFILES_DIR:-$0.runfiles}/{{lock_lib_rlocation_path}}"
+  watched=()
+  while IFS= read -r _watch_file; do
+    watched+=("$_watch_file")
+  done < <(bazel_env_collect_watch_files "$PWD" '{{tools_dir}}'/*_watch_dirs.txt '{{tools_dir}}'/*_watch_files.txt)
+  if [[ ${#watched[@]} -gt 0 ]]; then
+    # Merge into the workspace-global lock instead of overwriting it: keep
+    # entries we don't manage - other bazel_env targets share this one lock -
+    # and refresh only our own watched files. Written via temp + mv so a partial
+    # write can't leave a truncated lock.
+    if _lock_tmp="$(mktemp bazel_env.lock.XXXXXX)"; then
+      if [[ -f bazel_env.lock ]]; then
+        awk '
+          NR==FNR { seen[$0] = 1; next }
+          { match($0, /^[^ ]+ +/); p = substr($0, RSTART + RLENGTH); if (!(p in seen)) print }
+        ' <(printf '%s\n' "${watched[@]}") bazel_env.lock > "$_lock_tmp" 2>/dev/null || true
+      fi
+      if "$sha256_cmd" "${watched[@]}" >> "$_lock_tmp"; then
+        mv "$_lock_tmp" bazel_env.lock
+        echo "✅ Refreshed bazel_env.lock"
+      else
+        rm -f "$_lock_tmp"
+        echo "⚠️ Failed to refresh bazel_env.lock" >&2
+      fi
+    fi
+  fi
+else
+  echo "⚠️ sha256sum not found in runfiles; skipped refreshing bazel_env.lock" >&2
+fi
+
 cat << 'EOF'
 
 Tools available in PATH:
