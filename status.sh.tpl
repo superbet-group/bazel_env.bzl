@@ -86,24 +86,12 @@ if [[ -x "$sha256_cmd" ]]; then
     watched+=("$_watch_file")
   done < <(bazel_env_collect_watch_files "$PWD" '{{tools_dir}}'/*_watch_dirs.txt '{{tools_dir}}'/*_watch_files.txt)
   if [[ ${#watched[@]} -gt 0 ]]; then
-    # Merge into the workspace-global lock instead of overwriting it: keep
-    # entries we don't manage - other bazel_env targets share this one lock -
-    # and refresh only our own watched files. Written via temp + mv so a partial
-    # write can't leave a truncated lock.
-    if _lock_tmp="$(mktemp bazel_env.lock.XXXXXX)"; then
-      if [[ -f bazel_env.lock ]]; then
-        awk '
-          NR==FNR { seen[$0] = 1; next }
-          { match($0, /^[^ ]+ +/); p = substr($0, RSTART + RLENGTH); if (!(p in seen)) print }
-        ' <(printf '%s\n' "${watched[@]}") bazel_env.lock > "$_lock_tmp" 2>/dev/null || true
-      fi
-      if "$sha256_cmd" "${watched[@]}" >> "$_lock_tmp"; then
-        mv "$_lock_tmp" bazel_env.lock
-        echo "✅ Refreshed bazel_env.lock"
-      else
-        rm -f "$_lock_tmp"
-        echo "⚠️ Failed to refresh bazel_env.lock" >&2
-      fi
+    # Merge into the workspace-global lock (shared by every bazel_env target):
+    # keep entries we don't manage, refresh only our own watched files.
+    if bazel_env_merge_lock "$sha256_cmd" bazel_env.lock "${watched[@]}"; then
+      echo "✅ Refreshed bazel_env.lock"
+    else
+      echo "⚠️ Failed to refresh bazel_env.lock" >&2
     fi
   fi
 else

@@ -165,6 +165,17 @@ fi
 # our own watched file must still be present (refreshed)
 assert_contains "$build_workspace_directory/MODULE.bazel" "$(cat "$lock_file")"
 
+#### Seed suppresses the first-use rebuild ####
+assert_cmd_output "buildifier --version" "buildifier version: 7.3.1 "
+
+#### A watched-file change after seeding still rebuilds ####
+
+corrupt=$(mktemp)
+awk -v f="$build_workspace_directory/MODULE.bazel" '
+  { match($0, /^[^ ]+ +/); p = substr($0, RSTART + RLENGTH); if (p == f) $0 = "0000000000000000000000000000000000000000000000000000000000000000  " f; print }
+' "$lock_file" > "$corrupt" && mv "$corrupt" "$lock_file"
+assert_cmd_output "buildifier --version" "Detected changes in watched files, rebuilding bazel_env..."
+
 #### Tools ####
 
 # Ensure repeated test configurations begin with the same auto-rebuild state.

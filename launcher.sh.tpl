@@ -140,18 +140,7 @@ if [[ $rebuild_env == True && "${BAZEL_ENV_INTERNAL_EXEC:-False}" != True ]]; th
   # Run bazel from the source workspace to ensure it can find the WORKSPACE/MODULE file.
   # Redirect stdout to stderr so build logs don't pollute stdout and break piping.
   (cd "$watch_base" && "${BAZEL:-bazel}" build {{bazel_env_label}} >&2)
-  tmp=$(mktemp)
-  trap 'rm -f "$tmp"' EXIT INT TERM
-  awk '
-    NR==FNR { files[$0]=1; next }
-    {
-      match($0, /^[^ ]+ +/)
-      filepath = substr($0, RSTART + RLENGTH)
-      if (!(filepath in files)) print
-    }
-  ' <(printf "%s\n" "${files_to_watch[@]}") "$lock_file" > "$tmp" 2>/dev/null || true
-  "$sha256_cmd" "${files_to_watch[@]}" >> "$tmp"
-  mv "$tmp" "$lock_file"
+  bazel_env_merge_lock "$sha256_cmd" "$lock_file" "${files_to_watch[@]}" || true
   BAZEL_ENV_INTERNAL_EXEC=True exec "$own_path" "$@"
 fi
 

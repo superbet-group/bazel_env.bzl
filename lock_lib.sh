@@ -40,3 +40,35 @@ bazel_env_collect_watch_files() {
   [[ ${#out[@]} -gt 0 ]] || return 0
   printf '%s\n' "${out[@]}" | sort -u
 }
+
+# bazel_env_merge_lock <sha256_cmd> <lock_file> <file>...
+#
+# In:
+#   <sha256_cmd>  sha256sum binary used to hash the files.
+#   <lock_file>   lock to update in place (workspace-global, shared by all targets).
+#   <file>...     absolute paths whose lock entries to refresh.
+# Out:            <lock_file> updated - these files' hashes refreshed, all other
+#                 entries kept. Atomic (temp + rename); left untouched on any
+#                 failure (returns non-zero).
+bazel_env_merge_lock() {
+  local sha256_cmd="$1" lock_file="$2"
+  shift 2
+  [[ $# -gt 0 ]] || return 0
+  local tmp
+  tmp="$(mktemp "${lock_file}.XXXXXX")" || return 1
+  if [[ -f "$lock_file" ]]; then
+    if ! awk '
+      NR==FNR { seen[$0] = 1; next }
+      { match($0, /^[^ ]+ +/); p = substr($0, RSTART + RLENGTH); if (!(p in seen)) print }
+    ' <(printf '%s\n' "$@") "$lock_file" > "$tmp"; then
+      rm -f "$tmp"
+      return 1
+    fi
+  fi
+  if "$sha256_cmd" "$@" >> "$tmp"; then
+    mv "$tmp" "$lock_file" || { rm -f "$tmp"; return 1; }
+  else
+    rm -f "$tmp"
+    return 1
+  fi
+}
