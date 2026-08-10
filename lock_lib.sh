@@ -54,21 +54,17 @@ bazel_env_merge_lock() {
   local sha256_cmd="$1" lock_file="$2"
   shift 2
   [[ $# -gt 0 ]] || return 0
-  local tmp
-  tmp="$(mktemp "${lock_file}.XXXXXX")" || return 1
-  if [[ -f "$lock_file" ]]; then
-    if ! awk '
-      NR==FNR { seen[$0] = 1; next }
-      { match($0, /^[^ ]+ +/); p = substr($0, RSTART + RLENGTH); if (!(p in seen)) print }
-    ' <(printf '%s\n' "$@") "$lock_file" > "$tmp"; then
-      rm -f "$tmp"
-      return 1
+  # Run in a subshell so the cleanup trap is scoped here and never touches the caller's traps
+  (
+    tmp="$(mktemp "${lock_file}.XXXXXX")" || exit 1
+    trap 'rm -f "$tmp"' EXIT INT TERM
+    if [[ -f "$lock_file" ]]; then
+      awk '
+        NR==FNR { seen[$0] = 1; next }
+        { match($0, /^[^ ]+ +/); p = substr($0, RSTART + RLENGTH); if (!(p in seen)) print }
+      ' <(printf '%s\n' "$@") "$lock_file" > "$tmp" || exit 1
     fi
-  fi
-  if "$sha256_cmd" "$@" >> "$tmp"; then
-    mv "$tmp" "$lock_file" || { rm -f "$tmp"; return 1; }
-  else
-    rm -f "$tmp"
-    return 1
-  fi
+    "$sha256_cmd" "$@" >> "$tmp" || exit 1
+    mv "$tmp" "$lock_file"
+  )
 }
