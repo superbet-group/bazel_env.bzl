@@ -82,9 +82,15 @@ sha256_cmd="${RUNFILES_DIR:-$0.runfiles}/{{sha256sum_rlocation_path}}"
 if [[ -x "$sha256_cmd" ]]; then
   source "${RUNFILES_DIR:-$0.runfiles}/{{lock_lib_rlocation_path}}"
   watched=()
-  while IFS= read -r _watch_file; do
-    watched+=("$_watch_file")
-  done < <(bazel_env_collect_watch_files "$PWD" '{{tools_dir}}'/*_watch_dirs.txt '{{tools_dir}}'/*_watch_files.txt)
+  watch_lists=()
+  while IFS= read -r _rel; do
+    [[ -n "$_rel" ]] && watch_lists+=("${RUNFILES_DIR:-$0.runfiles}/$_rel")
+  done < <(printf '%s\n' '{{watch_list_rlocation_paths}}')
+  if [[ ${#watch_lists[@]} -gt 0 ]]; then
+    while IFS= read -r _watch_file; do
+      watched+=("$_watch_file")
+    done < <(bazel_env_collect_watch_files "$PWD" "${watch_lists[@]}")
+  fi
   if [[ ${#watched[@]} -gt 0 ]]; then
     # Merge into the workspace-global lock (shared by every bazel_env target):
     # keep entries we don't manage, refresh only our own watched files.
